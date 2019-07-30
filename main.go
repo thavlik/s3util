@@ -39,6 +39,11 @@ func createSession() *session.Session {
 	return sess
 }
 
+// splitNameParts splits an s3 path into its parts
+// Examples:
+// s3://mybucket/mykey	=> "mybucket", "mykey", nil
+// s3://mybucket/mykey	=> "mybucket", "mykey", nil
+// s3://mybucket/		=> "mybucket", "", nil (trailing / is optional)
 func splitNameParts(path string) (string, string, error) {
 	// get the path in `bucket/key` format
 	withoutProtocol := path[len("s3://"):]
@@ -172,8 +177,7 @@ func upload(source string, dest string) error {
 			uploader,
 			bucket,
 			aws.String(fmt.Sprintf("%s/%s", keyPrefix, j.outputKey)),
-			j.inputFullPath,
-		)
+			j.inputFullPath)
 	})
 
 	for i := range jobs {
