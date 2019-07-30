@@ -204,6 +204,26 @@ func download(source string, dest string) error {
 	s3Client := s3.New(sess)
 	sourceLen := len(source)
 
+	info, err := os.Stat(dest)
+
+	if err != nil {
+		if os.IsNotExist(err) {
+		}
+		return fmt.Errorf("failed to stat destination '%s': %v", dest, err)
+	}
+
+	if info.IsDir() {
+		// Output might be key name
+	}
+
+	type downloadJob struct {
+		key     string
+		outPath string
+		done    chan error
+	}
+
+	var jobs []downloadJob
+
 	if source[sourceLen-1] == '*' {
 		// Wildcard input: download all keys with this prefix
 		out, err := s3Client.ListObjects(&s3.ListObjectsInput{
@@ -213,11 +233,47 @@ func download(source string, dest string) error {
 		if err != nil {
 			return fmt.Errorf("failed to list s3: %v", err)
 		}
-		for _, obj := range out.Contents {
+		jobs = make([]downloadJob, len(out.Contents))
+		for i, obj := range out.Contents {
 			//obj.Key()
+			jobs[i] = downloadJob{
+				key:     *obj.Key,
+				outPath: "",
+			}
 		}
 	} else {
+		jobs = []downloadJob{
+			downloadJob{
+				key:     key,
+				outPath: dest,
+			},
+		}
+	}
 
+	pool := tunny.NewFunc(parallelism, func(payload interface{}) interface{} {
+		j := payload.(*downloadJob)
+		return uploadSingleFile(
+			uploader,
+			bucket,
+			aws.String(fmt.Sprintf("%s/%s", keyPrefix, j.outputKey)),
+			j.inputFullPath,
+		)
+	})
+
+	for i := range jobs {
+		go func(job *downloadJob) {
+			job.done <- func() error {
+				if err, ok := pool.Process(job).(error); ok && err != nil {
+					return err
+				}
+				return nil
+			}()
+		}(&jobs[i])
+	}
+
+	for i := range jobs {
+		if err := <-jobs[i].done; err != nil {
+		}
 	}
 
 	return nil
